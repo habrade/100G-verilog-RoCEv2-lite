@@ -76,18 +76,25 @@ SYN_FILES += lib/RoCE/lib/eth/lib/axi/rtl/axi_register.v
 
 
 # RoCE Files
+SYN_FILES +=  lib/RoCE/rtl/header_files/Board_parameters.sv
+SYN_FILES +=  lib/RoCE/rtl/header_files/RoCE_parameters.sv
+SYN_FILES +=  lib/RoCE/rtl/axis_data_generator.sv
 SYN_FILES +=  lib/RoCE/rtl/axis_mask_fields_icrc.v
 SYN_FILES +=  lib/RoCE/rtl/axis_RoCE_icrc_insert.v
 SYN_FILES +=  lib/RoCE/rtl/RoCE_udp_tx_64.v
 SYN_FILES +=  lib/RoCE/rtl/RoCE_udp_rx_64.v
-SYN_FILES +=  lib/RoCE/rtl/RoCE_tx_header_producer.v
+SYN_FILES +=  lib/RoCE/rtl/utils/generic_arb_mux.v
+SYN_FILES +=  lib/RoCE/rtl/utils/header_prepender.sv
+SYN_FILES +=  lib/RoCE/rtl/utils/header_stripper.sv
+SYN_FILES +=  lib/RoCE/rtl/RoCE_udp_tx_simple.sv
+SYN_FILES +=  lib/RoCE/rtl/RoCE_tx_header_producer.sv
 SYN_FILES +=  lib/RoCE/rtl/RoCE_minimal_stack_64.v
 SYN_FILES +=  lib/RoCE/rtl/udp_RoCE_connection_manager.v
-SYN_FILES +=  lib/RoCE/rtl/RoCE_latency_eval.v
-SYN_FILES +=  lib/RoCE/rtl/RoCE_qp_state_module.v
-SYN_FILES +=  lib/RoCE/rtl/RoCE_simple_work_queue.v
-SYN_FILES +=  lib/RoCE/rtl/RoCE_retransmission_module.v
-SYN_FILES +=  lib/RoCE/rtl/ram_block.v
+SYN_FILES +=  lib/RoCE/rtl/RoCE_latency_eval.sv
+SYN_FILES +=  lib/RoCE/rtl/RoCE_qp_state_module.sv
+SYN_FILES +=  lib/RoCE/rtl/RoCE_simple_work_queue.sv
+SYN_FILES +=  lib/RoCE/rtl/RoCE_retransmission_module.sv
+# SYN_FILES +=  lib/RoCE/rtl/ram_block.sv
 SYN_FILES +=  lib/RoCE/rtl/axis_handshake_monitor.vhd
 SYN_FILES +=  lib/RoCE/rtl/axi_ram_mod.v
 SYN_FILES +=  lib/RoCE/rtl/test_ram.v
