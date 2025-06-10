@@ -92,6 +92,19 @@ module header_stripper #
 
     reg [15:0] word_count_reg = 16'd0, word_count_next;
 
+    function [15:0] keep2count;
+        input [KEEP_WIDTH-1:0] k;
+        integer j;
+        begin
+            keep2count = 0;
+            for (j = 0; j < KEEP_WIDTH; j = j + 1) begin
+                if (k[j]) begin
+                    keep2count = keep2count + 1;
+                end
+            end
+        end
+    endfunction
+
     reg m_hdr_valid_reg = 1'b0, m_hdr_valid_next;
     reg [IN_HEADER_WIDTH*8  -1:0] m_hdr_pt_reg, m_hdr_pt_next;
     reg [OUT_HEADER_WIDTH*8  -1:0] m_hdr_out_reg, m_hdr_out_next;
@@ -171,7 +184,8 @@ module header_stripper #
         m_hdr_valid_next = m_hdr_valid_reg && !m_hdr_ready;
 
         // TODO check this shit
-        s_hdr_ready_next = !m_hdr_valid_next;
+        // s_hdr_ready_next = !m_hdr_valid_next;
+        s_hdr_ready_next = 1'b0;
         store_hdr = 1'b0;
 
         s_payload_axis_tready_next = m_payload_axis_tready_int_early && shift_payload_axis_input_tready && (!m_hdr_valid || m_hdr_ready);
@@ -180,9 +194,10 @@ module header_stripper #
         transfer_in_save = 1'b0;
 
         if (s_hdr_ready && s_hdr_valid) begin
-            s_hdr_ready_next = 1'b0;
+            // s_hdr_ready_next = 1'b0;
             s_payload_axis_tready_next = 1'b1;
             store_hdr = 1'b1;
+            // word_count_next = s_hdr_in[15:0];
         end
 
         m_hdr_pt_next = m_hdr_pt_reg;
@@ -218,6 +233,11 @@ module header_stripper #
                         m_hdr_valid_next = 1'b1;
                         read_header_next = 1'b0;
                         read_payload_next = 1'b1;
+                    end else begin
+                        // reached end of header exactly at tlast - header only frame
+                        m_hdr_valid_next = 1'b1;
+                        read_header_next = 1'b1;
+                        read_payload_next = 1'b0;
                     end
                 end
 
@@ -232,16 +252,23 @@ module header_stripper #
                 m_payload_axis_tlast_int = shift_payload_axis_tlast;
                 m_payload_axis_tuser_int = shift_payload_axis_tuser;
 
-                word_count_next = word_count_reg - DATA_WIDTH/8;
+                // word_count_next = word_count_reg - DATA_WIDTH/8;
+                word_count_next = word_count_reg - keep2count(shift_payload_axis_tkeep);
+
             end
 
             if (shift_payload_axis_tlast) begin
                 if (read_header_next) begin
-                    // don't have the whole header
-                    error_header_early_termination_next = 1'b1;
+                    // check for header-only frame that ends exactly with tlast
+                    if (ptr_reg == (HDR_SIZE-1)/BYTE_LANES && (!KEEP_ENABLE || s_payload_axis_tkeep[(HDR_SIZE-1)%BYTE_LANES])) begin
+                        // complete header received; no payload
+                    end else begin
+                        // don't have the whole header
+                        error_header_early_termination_next = 1'b1;
+                    end
                 end
                 if (read_payload_next) begin
-                    if (word_count_reg >= DATA_WIDTH/4) begin // 2 times the data width in bytes
+                    if (word_count_next >= DATA_WIDTH/4) begin // 2 times the data width in bytes
                         error_payload_early_termination_next = 1'b1;
                     end
                 end
@@ -251,6 +278,11 @@ module header_stripper #
                 read_header_next = 1'b1;
                 read_payload_next = 1'b0;
             end
+        end
+        
+        // header ready when waiting for new header and output header is not valid
+        if (ptr_next == 0 && read_header_next && !m_hdr_valid_next && !(s_hdr_ready && s_hdr_valid)) begin
+            s_hdr_ready_next = 1'b1;
         end
     end
 

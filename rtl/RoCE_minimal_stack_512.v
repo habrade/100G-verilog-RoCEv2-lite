@@ -633,6 +633,7 @@ module RoCE_minimal_stack_512 #(
     .s_dma_meta_ready          (s_dma_meta_ready),
     .s_dma_length              (qp_curr_dma_transfer_length),
     .s_rem_qpn                 (qp_curr_rem_qpn),
+    .s_loc_qpn                 (qp_curr_loc_qpn),
     .s_rem_psn                 (qp_curr_rem_psn),
     .s_r_key                   (qp_curr_r_key),
     .s_rem_ip_addr             (qp_curr_rem_ip_addr),

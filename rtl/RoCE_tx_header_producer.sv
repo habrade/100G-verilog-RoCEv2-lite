@@ -777,19 +777,33 @@ module RoCE_tx_header_producer #(
             psn_reg <= psn_next;
 
             if (store_parameters) begin
-                qp_info <= {{64{1'b0}}, s_r_key, s_rem_psn, s_rem_qpn, 24'h000016, 3'b010};
-                //assign qp_info[2:0]     = 3'b010;  //qp_state
-                //assign qp_info[26:3]    = 24'h000016;  //loc_qpn
-                //assign qp_info[50:27]   = 24'h543210;  //rem_psn
-                //assign qp_info[74:51]   = 24'h012345;  //loc_psn
-                //assign qp_info[106:75]  = 32'h11223344;  //r_key
-                //assign qp_info[170:107] = 64'h000000000000;  //vaddr
+                // qp_info <= {{64{1'b0}}, s_r_key, s_rem_psn, s_rem_qpn, 24'h000016, 3'b010};
+                // //assign qp_info[2:0]     = 3'b010;  //qp_state
+                // //assign qp_info[26:3]    = 24'h000016;  //loc_qpn
+                // //assign qp_info[50:27]   = 24'h543210;  //rem_psn
+                // //assign qp_info[74:51]   = 24'h012345;  //loc_psn
+                // //assign qp_info[106:75]  = 32'h11223344;  //r_key
+                // //assign qp_info[170:107] = 64'h000000000000;  //vaddr
 
-                qp_conn <= {RoCE_udp_port, s_rem_ip_addr, s_rem_qpn, 24'h000017};
-                //assign qp_conn[23:0]  = 24'h000017;  //loc_qpn
-                //assign qp_conn[47:24] = 24'h000016;  //rem_qpn
-                //assign qp_conn[79:48] = 32'h0BD40116;  //rem_ip_addr
-                //assign qp_conn[95:80] = ROCE_UDP_PORT;  //rem_udp_port
+                // qp_conn <= {RoCE_udp_port, s_rem_ip_addr, s_rem_qpn, 24'h000017};
+                // //assign qp_conn[23:0]  = 24'h000017;  //loc_qpn
+                // //assign qp_conn[47:24] = 24'h000016;  //rem_qpn
+                // //assign qp_conn[79:48] = 32'h0BD40116;  //rem_ip_addr
+                // //assign qp_conn[95:80] = ROCE_UDP_PORT;  //rem_udp_port
+
+                 // store connection parameters from the connection manager
+                qp_info <= {{64{1'b0}}, s_r_key, s_rem_psn, s_loc_qpn, s_rem_qpn, 3'b010};
+                // qp_info[26:3]    = local QPN
+                // qp_info[50:27]   = remote PSN
+                // qp_info[74:51]   = local PSN (unused)
+                // qp_info[106:75]  = r_key
+                // qp_info[170:107] = remote base address
+
+                qp_conn <= {RoCE_udp_port, s_rem_ip_addr, s_rem_qpn, s_loc_qpn};
+                // qp_conn[23:0]  = local QPN
+                // qp_conn[47:24] = remote QPN
+                // qp_conn[79:48] = remote IP address
+                // qp_conn[95:80] = UDP port
 
                 tx_metadata <= {s_rem_addr, s_dma_length};
                 //assign tx_metadata[31:0]  = 32'd3200;  //dma_length
