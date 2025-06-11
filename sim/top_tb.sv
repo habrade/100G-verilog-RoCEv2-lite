@@ -237,6 +237,11 @@ module top_tb;
       send_chunk(d1, k1, 1);
     end
   endtask
+
+  // convenient keep constants
+  localparam [KEEP_WIDTH-1:0] KEEP_ALL  = {KEEP_WIDTH{1'b1}};
+  // second word keep (42 bytes valid)
+  localparam [KEEP_WIDTH-1:0] KEEP_LAST = {{(KEEP_WIDTH-42){1'b0}}, {42{1'b1}}};
   // CM packet construction parameters
   localparam [31:0] PC_IP    = 32'h1601d40b;
   localparam [31:0] FPGA_IP  = 32'h1601d40a;
@@ -248,7 +253,9 @@ module top_tb;
   localparam [15:0] CM_SRC_PORT = 16'h4322;
 
   // Ethernet/IP/UDP header with destination MAC 02:00:00:00:00:00
-  localparam [335:0] CM_HDR = 336'h0002000000003412340000123400000000000000120300004800214322430bd401160ad4011679a61140;
+  // Generated with src MAC 34:12:34:00:00:12 and IPs 22.1.212.11 -> 22.1.212.10
+  localparam [335:0] CM_HDR =
+      336'h02000000000034123400001208004500005c00000000401100001601d40b1601d40a4322432100480000;
 
   function automatic [511:0] build_cm_payload(
       input [2:0]  req_type,
@@ -308,22 +315,22 @@ module top_tb;
 
     frame = assemble_frame(build_cm_payload(3'd1, 24'd0, 1'b0, 1'b0, 32'd0, 32'd0));
     {OPEN_CH1, OPEN_CH0} = frame;
-    send_frame(OPEN_CH0, {KEEP_WIDTH{1'b1}}, OPEN_CH1, {KEEP_WIDTH{1'b1}});
+    send_frame(OPEN_CH0, KEEP_ALL, OPEN_CH1, KEEP_LAST);
     repeat(20) @(posedge clk);
 
     frame = assemble_frame(build_cm_payload(3'd3, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
     {MOD_CH1, MOD_CH0} = frame;
-    send_frame(MOD_CH0, {KEEP_WIDTH{1'b1}}, MOD_CH1, {KEEP_WIDTH{1'b1}});
+    send_frame(MOD_CH0, KEEP_ALL, MOD_CH1, KEEP_LAST);
     repeat(20) @(posedge clk);
 
     frame = assemble_frame(build_cm_payload(3'd0, REMOTE_QP, 1'b1, 1'b1, 32'd16000, 32'd100));
     {START_CH1, START_CH0} = frame;
-    send_frame(START_CH0, {KEEP_WIDTH{1'b1}}, START_CH1, {KEEP_WIDTH{1'b1}});
+    send_frame(START_CH0, KEEP_ALL, START_CH1, KEEP_LAST);
     repeat(20) @(posedge clk);
 
     frame = assemble_frame(build_cm_payload(3'd4, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
     {CLOSE_CH1, CLOSE_CH0} = frame;
-    send_frame(CLOSE_CH0, {KEEP_WIDTH{1'b1}}, CLOSE_CH1, {KEEP_WIDTH{1'b1}});
+    send_frame(CLOSE_CH0, KEEP_ALL, CLOSE_CH1, KEEP_LAST);
     repeat(20) @(posedge clk);
 
     $finish;
