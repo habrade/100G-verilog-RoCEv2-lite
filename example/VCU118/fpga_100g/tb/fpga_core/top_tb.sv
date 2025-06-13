@@ -195,6 +195,9 @@ module top_tb;
   // convenient keep constants
   localparam [KEEP_WIDTH-1:0] KEEP_ALL  = {KEEP_WIDTH{1'b1}};
   localparam [KEEP_WIDTH-1:0] KEEP_LAST = {{(KEEP_WIDTH-42){1'b0}}, {42{1'b1}}};
+  localparam [KEEP_WIDTH-1:0] KEEP_LAST_PING = {{(KEEP_WIDTH-10){1'b0}}, {10{1'b1}}};
+
+  localparam [255:0] PING_PAYLOAD = 256'h6162636465666768696a6b6c6d6e6f707172737475767778797a616263646566;
 
   // connection manager parameters -----------------------------------------
   localparam [31:0] PC_IP    = 32'h1601d40b;           // 22.1.212.11
@@ -249,6 +252,76 @@ module top_tb;
       assemble_frame = f;
   endfunction
 
+  function automatic [15:0] calc_checksum(input int len, input byte data[]);
+      int i;
+      int sum;
+      begin
+          sum = 0;
+          for (i = 0; i < len; i = i + 2) begin
+              sum = sum + {data[i], data[i+1]};
+          end
+          sum = (sum >> 16) + (sum & 16'hffff);
+          sum = (sum >> 16) + (sum & 16'hffff);
+          calc_checksum = ~sum[15:0];
+      end
+  endfunction
+
+  function automatic [1023:0] build_ping_frame(
+      input [31:0] src_ip,
+      input [31:0] dst_ip,
+      input [15:0] id,
+      input [15:0] seq
+  );
+      byte pkt[0:73];
+      int i;
+      reg [15:0] csum;
+      reg [1023:0] f;
+
+      // Ethernet header
+      pkt[0] = 8'h02; pkt[1] = 8'h00; pkt[2] = 8'h00; pkt[3] = 8'h00; pkt[4] = 8'h00; pkt[5] = 8'h00; // dst
+      pkt[6] = 8'h5a; pkt[7] = 8'h51; pkt[8] = 8'h52; pkt[9] = 8'h53; pkt[10] = 8'h54; pkt[11] = 8'h55; // src
+      pkt[12] = 8'h08; pkt[13] = 8'h00; // eth type
+
+      // IP header
+      pkt[14] = 8'h45; // version/IHL
+      pkt[15] = 8'h00;
+      pkt[16] = 8'h00; pkt[17] = 8'h3c; // total length 60 bytes
+      pkt[18] = id[15:8]; pkt[19] = id[7:0];
+      pkt[20] = 8'h00; pkt[21] = 8'h00; // flags/frag
+      pkt[22] = 8'h40; pkt[23] = 8'h01; // ttl, protocol
+      pkt[24] = 8'h00; pkt[25] = 8'h00; // checksum placeholder
+      pkt[26] = src_ip[31:24]; pkt[27] = src_ip[23:16];
+      pkt[28] = src_ip[15:8];  pkt[29] = src_ip[7:0];
+      pkt[30] = dst_ip[31:24]; pkt[31] = dst_ip[23:16];
+      pkt[32] = dst_ip[15:8];  pkt[33] = dst_ip[7:0];
+
+      // compute IP header checksum
+      csum = calc_checksum(20, pkt[14+:20]);
+      pkt[24] = csum[15:8];
+      pkt[25] = csum[7:0];
+
+      // ICMP header
+      pkt[34] = 8'h08; pkt[35] = 8'h00; // type, code
+      pkt[36] = 8'h00; pkt[37] = 8'h00; // checksum placeholder
+      pkt[38] = id[15:8]; pkt[39] = id[7:0];
+      pkt[40] = seq[15:8]; pkt[41] = seq[7:0];
+
+      for (i = 0; i < 32; i = i + 1) begin
+          pkt[42+i] = PING_PAYLOAD[i*8 +: 8];
+      end
+
+      // compute ICMP checksum
+      csum = calc_checksum(40, pkt[34+:40]);
+      pkt[36] = csum[15:8];
+      pkt[37] = csum[7:0];
+
+      f = 0;
+      for (i = 0; i < 74; i = i + 1) begin
+          f[i*8 +: 8] = pkt[i];
+      end
+      build_ping_frame = f;
+  endfunction
+
   // simple monitor to display transmitted frames
   always @(posedge clk) begin
     if (fifo_tx_axis_tvalid) begin
@@ -256,39 +329,68 @@ module top_tb;
     end
   end
 
+  task monitor_ping_reply();
+    reg [DATA_WIDTH-1:0] d0, d1;
+    reg [KEEP_WIDTH-1:0] k0, k1;
+    begin
+      @(posedge clk);
+      wait(fifo_tx_axis_tvalid);
+      d0 = fifo_tx_axis_tdata;
+      k0 = fifo_tx_axis_tkeep;
+      if (!fifo_tx_axis_tlast) begin
+        @(posedge clk);
+        d1 = fifo_tx_axis_tdata;
+        k1 = fifo_tx_axis_tkeep;
+      end else begin
+        d1 = 0;
+        k1 = 0;
+      end
+      $display("RX PING REPLY %h %h", d0, d1);
+    end
+  endtask
+
   reg [DATA_WIDTH-1:0] OPEN_CH0, OPEN_CH1;
   reg [DATA_WIDTH-1:0] MOD_CH0, MOD_CH1;
   reg [DATA_WIDTH-1:0] START_CH0, START_CH1;
   reg [DATA_WIDTH-1:0] CLOSE_CH0, CLOSE_CH1;
+  reg [DATA_WIDTH-1:0] PING_CH0, PING_CH1;
 
   initial begin
     reg [1023:0] frame;
     wait(!rst);
     @(posedge clk);
 
+    // send initial ping request and wait for reply
+    frame = build_ping_frame(PC_IP, FPGA_IP, 16'd1, 16'd1);
+    {PING_CH1, PING_CH0} = frame;
+    send_frame(PING_CH0, KEEP_ALL, PING_CH1, KEEP_LAST_PING);
+    monitor_ping_reply();
+    repeat(200) @(posedge clk);
+
     // 1) open connection
-    frame = assemble_frame(build_cm_payload(3'd1, 24'd0, 1'b0, 1'b0, 32'd0, 32'd0));
+    frame = assemble_frame(build_cm_payload(3'd1, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
     {OPEN_CH1, OPEN_CH0} = frame;
     send_frame(OPEN_CH0, KEEP_ALL, OPEN_CH1, KEEP_LAST);
+    @(posedge fifo_tx_axis_tvalid);
     repeat(20) @(posedge clk);
 
-    // 2) modify QP to RTS
-    frame = assemble_frame(build_cm_payload(3'd3, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
-    {MOD_CH1, MOD_CH0} = frame;
-    send_frame(MOD_CH0, KEEP_ALL, MOD_CH1, KEEP_LAST);
-    repeat(20) @(posedge clk);
+//    // 2) modify QP to RTS
+//    frame = assemble_frame(build_cm_payload(3'd3, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
+//    {MOD_CH1, MOD_CH0} = frame;
+//    send_frame(MOD_CH0, KEEP_ALL, MOD_CH1, KEEP_LAST);
+//    repeat(20) @(posedge clk);
 
-    // 3) start dummy transfer
-    frame = assemble_frame(build_cm_payload(3'd0, REMOTE_QP, 1'b1, 1'b1, 32'd16000, 32'd100));
-    {START_CH1, START_CH0} = frame;
-    send_frame(START_CH0, KEEP_ALL, START_CH1, KEEP_LAST);
-    repeat(20) @(posedge clk);
+//    // 3) start dummy transfer
+//    frame = assemble_frame(build_cm_payload(3'd0, REMOTE_QP, 1'b1, 1'b1, 32'd16000, 32'd100));
+//    {START_CH1, START_CH0} = frame;
+//    send_frame(START_CH0, KEEP_ALL, START_CH1, KEEP_LAST);
+//    repeat(20) @(posedge clk);
 
-    // 4) close connection
-    frame = assemble_frame(build_cm_payload(3'd4, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
-    {CLOSE_CH1, CLOSE_CH0} = frame;
-    send_frame(CLOSE_CH0, KEEP_ALL, CLOSE_CH1, KEEP_LAST);
-    repeat(20) @(posedge clk);
+//    // 4) close connection
+//    frame = assemble_frame(build_cm_payload(3'd4, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
+//    {CLOSE_CH1, CLOSE_CH0} = frame;
+//    send_frame(CLOSE_CH0, KEEP_ALL, CLOSE_CH1, KEEP_LAST);
+//    repeat(20) @(posedge clk);
 
     $finish;
   end
