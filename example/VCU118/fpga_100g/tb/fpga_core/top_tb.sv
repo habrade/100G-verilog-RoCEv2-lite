@@ -228,16 +228,73 @@ module top_tb;
   localparam [31:0] PC_IP    = 32'h1601d40b;           // 22.1.212.11
   localparam [31:0] FPGA_IP  = 32'h1601d40a;           // 22.1.212.10
   localparam [47:0] PC_MAC   = 48'hb8599fed814d;       // B8:59:9F:ED:81:4D
-  localparam [23:0] LOCAL_QP = 24'd17;
+  localparam [23:0] LOCAL_QP = 24'd999;
   localparam [31:0] LOCAL_RKEY = 32'h00000219;
   localparam [63:0] LOCAL_VADDR = 64'h00007f24b8e8a000;
   localparam [23:0] REMOTE_QP = 24'd256;
   localparam [15:0] CM_DST_PORT = 16'h4321;
   localparam [15:0] CM_SRC_PORT = 16'h4322;
 
-  // Ethernet/IP/UDP header with destination MAC 02:00:00:00:00:00
-  // Stored little-endian so the first AXI byte is the destination MAC MSB
-  localparam [335:0] CM_HDR = 336'h00004800214322430ad401160bd4011600001140000000005c00004500084d81ed9f59b8000000000002;
+    // build connection manager header from address parameters
+  // Build the connection manager header.  The result is stored little-endian so
+  // that CM_HDR[7:0] is the first byte transmitted on AXI.  All multi-byte
+  // parameters are supplied in normal network order (big-endian).
+  function automatic [335:0] build_cm_hdr(
+      input [47:0] dst_mac,
+      input [47:0] src_mac,
+      input [31:0] src_ip,
+      input [31:0] dst_ip,
+      input [15:0] src_port,
+      input [15:0] dst_port
+  );
+      reg [7:0] b [0:41];
+      reg [335:0] h;
+      integer i;
+
+      // destination MAC address
+      for (i = 0; i < 6; i = i + 1) begin
+          b[i] = dst_mac[47 - i*8 -: 8];
+      end
+
+      // source MAC address
+      for (i = 0; i < 6; i = i + 1) begin
+          b[i+6] = src_mac[47 - i*8 -: 8];
+      end
+
+      // EtherType
+      b[12] = 8'h08;
+      b[13] = 8'h00;
+
+      // IPv4 header
+      b[14] = 8'h45;              // version, IHL
+      b[15] = 8'h00;              // DSCP/ECN
+      {b[16], b[17]} = 16'h005c;  // total length
+      {b[18], b[19]} = 16'h0000;  // identification
+      {b[20], b[21]} = 16'h0000;  // flags/fragment offset
+      b[22] = 8'h40;              // TTL
+      b[23] = 8'h11;              // protocol: UDP
+      {b[24], b[25]} = 16'h0000;  // header checksum (ignored)
+      {b[26], b[27], b[28], b[29]} = src_ip;
+      {b[30], b[31], b[32], b[33]} = dst_ip;
+
+      // UDP header
+      {b[34], b[35]} = src_port;
+      {b[36], b[37]} = dst_port;
+      {b[38], b[39]} = 16'h0048;   // length
+      {b[40], b[41]} = 16'h0000;   // checksum
+
+      // pack bytes into little-endian vector
+      h = 0;
+      for (i = 0; i < 42; i = i + 1) begin
+          h[i*8 +: 8] = b[i];
+      end
+
+      build_cm_hdr = h;
+  endfunction
+
+  localparam [47:0] CM_DST_MAC = 48'h020000000000;
+  // header stored little-endian so first AXI byte is the destination MAC MSB
+  localparam [335:0] CM_HDR = build_cm_hdr(CM_DST_MAC, PC_MAC, PC_IP, FPGA_IP, CM_SRC_PORT, CM_DST_PORT);
 
   function automatic [511:0] build_cm_payload(
       input [2:0]  req_type,
@@ -495,37 +552,50 @@ module top_tb;
     wait(!rst);
     @(posedge clk);
 
+    // send initial ping request and wait for reply
+    frame = build_ping_frame(PC_IP, FPGA_IP, 16'd1, 16'd1);
+    {PING_CH1, PING_CH0} = frame;
+    send_frame(PING_CH0, KEEP_ALL, PING_CH1, KEEP_LAST_PING);
+    monitor_ping_reply();
+    repeat(20) @(posedge clk);
+
     // preload ARP cache on the DUT
     frame = build_arp_reply(PC_MAC, PC_IP, 48'h020000000000, FPGA_IP);
     ARP_CH0 = frame;
     send_chunk(ARP_CH0, KEEP_LAST, 1);
-    repeat(100) @(posedge clk);
+    @(posedge fifo_tx_axis_tvalid);
+    repeat(20) @(posedge clk);
+
+    // 1) open connection
+    frame = assemble_frame(build_cm_payload(3'd1, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
+    {OPEN_CH1, OPEN_CH0} = frame;
+    send_frame(OPEN_CH0, KEEP_ALL, OPEN_CH1, KEEP_LAST);
+    $display("[%0t] OPEN QP", $time);
+    @(posedge fifo_tx_axis_tvalid);
+    repeat(40) @(posedge clk);
+
+    // 2) modify QP to RTS
+    frame = assemble_frame(build_cm_payload(3'd3, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
+    {MOD_CH1, MOD_CH0} = frame;
+    send_frame(MOD_CH0, KEEP_ALL, MOD_CH1, KEEP_LAST);
+    $display("[%0t] Change QP to RTS", $time);
+    @(posedge fifo_tx_axis_tvalid);
+    repeat(40) @(posedge clk);
+
+    // 3) start dummy transfer
+    frame = assemble_frame(build_cm_payload(3'd0, REMOTE_QP, 1'b1, 1'b1, 32'd40960, 32'd1));
+    {START_CH1, START_CH0} = frame;
+    send_frame(START_CH0, KEEP_ALL, START_CH1, KEEP_LAST);
+    $display("[%0t] Start transfer", $time);
+    @(posedge fifo_tx_axis_tvalid);
+    repeat(800) @(posedge clk);
 
     // send initial ping request and wait for reply
     frame = build_ping_frame(PC_IP, FPGA_IP, 16'd1, 16'd1);
     {PING_CH1, PING_CH0} = frame;
     send_frame(PING_CH0, KEEP_ALL, PING_CH1, KEEP_LAST_PING);
     monitor_ping_reply();
-    repeat(200) @(posedge clk);
-
-    // 1) open connection
-    frame = assemble_frame(build_cm_payload(3'd1, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
-    {OPEN_CH1, OPEN_CH0} = frame;
-    send_frame(OPEN_CH0, KEEP_ALL, OPEN_CH1, KEEP_LAST);
-    // @(posedge fifo_tx_axis_tvalid);
-    repeat(200) @(posedge clk);
-
-//    // 2) modify QP to RTS
-//    frame = assemble_frame(build_cm_payload(3'd3, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
-//    {MOD_CH1, MOD_CH0} = frame;
-//    send_frame(MOD_CH0, KEEP_ALL, MOD_CH1, KEEP_LAST);
-//    repeat(20) @(posedge clk);
-
-//    // 3) start dummy transfer
-//    frame = assemble_frame(build_cm_payload(3'd0, REMOTE_QP, 1'b1, 1'b1, 32'd16000, 32'd100));
-//    {START_CH1, START_CH0} = frame;
-//    send_frame(START_CH0, KEEP_ALL, START_CH1, KEEP_LAST);
-//    repeat(20) @(posedge clk);
+    repeat(20) @(posedge clk);
 
 //    // 4) close connection
 //    frame = assemble_frame(build_cm_payload(3'd4, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));

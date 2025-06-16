@@ -255,8 +255,8 @@ wire [31:0] subnet_mask = {8'd255, 8'd255, 8'd255, 8'd0  };
 
 wire clear_arp_cache;
 
-wire [12:0] pmtu = 13'd4;
-wire [15:0] RoCE_udp_port = 16'h12B7;
+wire [12:0] pmtu;
+wire [15:0] RoCE_udp_port;
   
   vio_roce_ip_cfg vio_roce_ip_cfg_inst (
     .clk(clk),
@@ -738,7 +738,7 @@ assign rx_fifo_udp_payload_axis_tuser = rx_udp_payload_axis_tuser;
       .rnr_retry_count(3'd7)
   );
   
-  /*
+  
   ila_axis ila_eth_payload_tx(
     .clk(clk),
     .probe0(tx_eth_payload_axis_tdata),
@@ -748,7 +748,17 @@ assign rx_fifo_udp_payload_axis_tuser = rx_udp_payload_axis_tuser;
     .probe4(tx_eth_payload_axis_tlast),
     .probe5(tx_eth_payload_axis_tuser)
   );
-  */
+  
+    ila_axis ila_eth_payload_rx(
+    .clk(clk),
+    .probe0(rx_eth_payload_axis_tdata),
+    .probe1(rx_eth_payload_axis_tkeep),
+    .probe2(rx_eth_payload_axis_tvalid),
+    .probe3(rx_eth_payload_axis_tready),
+    .probe4(rx_eth_payload_axis_tlast),
+    .probe5(rx_eth_payload_axis_tuser)
+  );
+  
 endmodule
 
 `resetall
