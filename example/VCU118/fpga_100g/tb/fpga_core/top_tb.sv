@@ -167,6 +167,11 @@ module top_tb;
   );
 
   // helper tasks -----------------------------------------------------------
+  // Buffer to capture data transmitted on the QSFP1 TX stream so it can be
+  // decoded when the frame boundary is reached.
+  byte tx_frame[0:2047];
+  int  tx_count = 0;
+
   task send_chunk(input [DATA_WIDTH-1:0] data,
                   input [KEEP_WIDTH-1:0] keep,
                   input last);
@@ -181,6 +186,25 @@ module top_tb;
       rx_axis_tlast  <= 0;
     end
   endtask
+
+  // collect bytes from qsfp1_tx_axis and decode on frame boundaries
+  always @(posedge clk) begin
+    if (rst) begin
+      tx_count <= 0;
+    end else if (qsfp1_tx_axis_tvalid && qsfp1_tx_axis_tready) begin
+      int i;
+      for (i = 0; i < KEEP_WIDTH; i = i + 1) begin
+        if (qsfp1_tx_axis_tkeep[i]) begin
+          tx_frame[tx_count] <= qsfp1_tx_axis_tdata[i*8 +: 8];
+          tx_count <= tx_count + 1;
+        end
+      end
+      if (qsfp1_tx_axis_tlast) begin
+        decode_packet(tx_count);
+        tx_count <= 0;
+      end
+    end
+  end
 
   task send_frame(input [DATA_WIDTH-1:0] d0,
                   input [KEEP_WIDTH-1:0] k0,
@@ -197,11 +221,13 @@ module top_tb;
   localparam [KEEP_WIDTH-1:0] KEEP_LAST = {{(KEEP_WIDTH-42){1'b0}}, {42{1'b1}}};
   localparam [KEEP_WIDTH-1:0] KEEP_LAST_PING = {{(KEEP_WIDTH-10){1'b0}}, {10{1'b1}}};
 
-  localparam [255:0] PING_PAYLOAD = 256'h6162636465666768696a6b6c6d6e6f707172737475767778797a616263646566;
+  // alternating 0xaa55 pattern used for ICMP payload
+  localparam [255:0] PING_PAYLOAD = 256'h55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa55aa;
 
   // connection manager parameters -----------------------------------------
   localparam [31:0] PC_IP    = 32'h1601d40b;           // 22.1.212.11
   localparam [31:0] FPGA_IP  = 32'h1601d40a;           // 22.1.212.10
+  localparam [47:0] PC_MAC   = 48'hb8599fed814d;       // B8:59:9F:ED:81:4D
   localparam [23:0] LOCAL_QP = 24'd17;
   localparam [31:0] LOCAL_RKEY = 32'h00000219;
   localparam [63:0] LOCAL_VADDR = 64'h00007f24b8e8a000;
@@ -211,7 +237,7 @@ module top_tb;
 
   // Ethernet/IP/UDP header with destination MAC 02:00:00:00:00:00
   // Stored little-endian so the first AXI byte is the destination MAC MSB
-  localparam [335:0] CM_HDR = 336'h00004800214322430ad401160bd4011600001140000000005c0000450008120000341234000000000002;
+  localparam [335:0] CM_HDR = 336'h00004800214322430ad401160bd4011600001140000000005c00004500084d81ed9f59b8000000000002;
 
   function automatic [511:0] build_cm_payload(
       input [2:0]  req_type,
@@ -279,7 +305,12 @@ module top_tb;
 
       // Ethernet header
       pkt[0] = 8'h02; pkt[1] = 8'h00; pkt[2] = 8'h00; pkt[3] = 8'h00; pkt[4] = 8'h00; pkt[5] = 8'h00; // dst
-      pkt[6] = 8'h5a; pkt[7] = 8'h51; pkt[8] = 8'h52; pkt[9] = 8'h53; pkt[10] = 8'h54; pkt[11] = 8'h55; // src
+        pkt[6] = PC_MAC[47:40];
+        pkt[7] = PC_MAC[39:32];
+        pkt[8] = PC_MAC[31:24];
+        pkt[9] = PC_MAC[23:16];
+        pkt[10] = PC_MAC[15:8];
+        pkt[11] = PC_MAC[7:0]; // src
       pkt[12] = 8'h08; pkt[13] = 8'h00; // eth type
 
       // IP header
@@ -322,10 +353,113 @@ module top_tb;
       build_ping_frame = f;
   endfunction
 
+  // build an ARP reply frame
+  function automatic [511:0] build_arp_reply(
+      input [47:0] sha,
+      input [31:0] spa,
+      input [47:0] tha,
+      input [31:0] tpa
+  );
+      byte pkt[0:41];
+      int i;
+      reg [511:0] f;
+
+      // Ethernet header
+      pkt[0]  = tha[47:40];
+      pkt[1]  = tha[39:32];
+      pkt[2]  = tha[31:24];
+      pkt[3]  = tha[23:16];
+      pkt[4]  = tha[15:8];
+      pkt[5]  = tha[7:0];
+      pkt[6]  = sha[47:40];
+      pkt[7]  = sha[39:32];
+      pkt[8]  = sha[31:24];
+      pkt[9]  = sha[23:16];
+      pkt[10] = sha[15:8];
+      pkt[11] = sha[7:0];
+      pkt[12] = 8'h08;
+      pkt[13] = 8'h06;
+
+      // ARP payload
+      pkt[14] = 8'h00; pkt[15] = 8'h01; // htype
+      pkt[16] = 8'h08; pkt[17] = 8'h00; // ptype
+      pkt[18] = 8'h06; // hlen
+      pkt[19] = 8'h04; // plen
+      pkt[20] = 8'h00; pkt[21] = 8'h02; // opcode reply
+
+      pkt[22] = sha[47:40];
+      pkt[23] = sha[39:32];
+      pkt[24] = sha[31:24];
+      pkt[25] = sha[23:16];
+      pkt[26] = sha[15:8];
+      pkt[27] = sha[7:0];
+
+      pkt[28] = spa[31:24];
+      pkt[29] = spa[23:16];
+      pkt[30] = spa[15:8];
+      pkt[31] = spa[7:0];
+
+      pkt[32] = tha[47:40];
+      pkt[33] = tha[39:32];
+      pkt[34] = tha[31:24];
+      pkt[35] = tha[23:16];
+      pkt[36] = tha[15:8];
+      pkt[37] = tha[7:0];
+
+      pkt[38] = tpa[31:24];
+      pkt[39] = tpa[23:16];
+      pkt[40] = tpa[15:8];
+      pkt[41] = tpa[7:0];
+
+      f = 0;
+      for (i = 0; i < 42; i = i + 1) begin
+          f[i*8 +: 8] = pkt[i];
+      end
+      build_arp_reply = f;
+  endfunction
+
+  // --------------------------------------------------------------
+  // Monitor the TX stream from the core and decode Ethernet frames
+  // --------------------------------------------------------------
+
+  task automatic decode_packet(input int len);
+    int i;
+    reg [15:0] eth_type;
+    reg [7:0] ip_proto;
+    begin
+      $display("[%0t] ---- TX FRAME (%0d bytes) ----", $time, len);
+      $display("[%0t]  DST %02x:%02x:%02x:%02x:%02x:%02x", $time,
+               tx_frame[0], tx_frame[1], tx_frame[2],
+               tx_frame[3], tx_frame[4], tx_frame[5]);
+      $display("[%0t]  SRC %02x:%02x:%02x:%02x:%02x:%02x", $time,
+               tx_frame[6], tx_frame[7], tx_frame[8],
+               tx_frame[9], tx_frame[10], tx_frame[11]);
+      eth_type = {tx_frame[12], tx_frame[13]};
+      $display("[%0t]  ETH TYPE 0x%04x", $time, eth_type);
+
+      if (eth_type == 16'h0800 && len >= 34) begin
+        ip_proto = tx_frame[23];
+        $display("[%0t]   IP SRC %0d.%0d.%0d.%0d", $time,
+                 tx_frame[26], tx_frame[27], tx_frame[28], tx_frame[29]);
+        $display("[%0t]   IP DST %0d.%0d.%0d.%0d", $time,
+                 tx_frame[30], tx_frame[31], tx_frame[32], tx_frame[33]);
+        $display("[%0t]   IP PROTO %0d", $time, ip_proto);
+        if (ip_proto == 17 && len >= 42) begin
+          $display("[%0t]    UDP SPORT %0d DPORT %0d", $time,
+                   {tx_frame[34], tx_frame[35]}, {tx_frame[36], tx_frame[37]});
+        end else if (ip_proto == 1 && len >= 42) begin
+          $display("[%0t]    ICMP TYPE %0d CODE %0d", $time,
+                   tx_frame[34], tx_frame[35]);
+        end
+      end
+    end
+  endtask
+
   // simple monitor to display transmitted frames
   always @(posedge clk) begin
     if (fifo_tx_axis_tvalid) begin
-      $display("TX %h keep=%h last=%b", fifo_tx_axis_tdata, fifo_tx_axis_tkeep, fifo_tx_axis_tlast);
+      $display("[%0t] TX %h keep=%h last=%b", $time,
+               fifo_tx_axis_tdata, fifo_tx_axis_tkeep, fifo_tx_axis_tlast);
     end
   end
 
@@ -345,7 +479,7 @@ module top_tb;
         d1 = 0;
         k1 = 0;
       end
-      $display("RX PING REPLY %h %h", d0, d1);
+      $display("[%0t] RX PING REPLY %h %h", $time, d0, d1);
     end
   endtask
 
@@ -354,11 +488,18 @@ module top_tb;
   reg [DATA_WIDTH-1:0] START_CH0, START_CH1;
   reg [DATA_WIDTH-1:0] CLOSE_CH0, CLOSE_CH1;
   reg [DATA_WIDTH-1:0] PING_CH0, PING_CH1;
+  reg [DATA_WIDTH-1:0] ARP_CH0;
 
   initial begin
     reg [1023:0] frame;
     wait(!rst);
     @(posedge clk);
+
+    // preload ARP cache on the DUT
+    frame = build_arp_reply(PC_MAC, PC_IP, 48'h020000000000, FPGA_IP);
+    ARP_CH0 = frame;
+    send_chunk(ARP_CH0, KEEP_LAST, 1);
+    repeat(100) @(posedge clk);
 
     // send initial ping request and wait for reply
     frame = build_ping_frame(PC_IP, FPGA_IP, 16'd1, 16'd1);
@@ -371,8 +512,8 @@ module top_tb;
     frame = assemble_frame(build_cm_payload(3'd1, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));
     {OPEN_CH1, OPEN_CH0} = frame;
     send_frame(OPEN_CH0, KEEP_ALL, OPEN_CH1, KEEP_LAST);
-    @(posedge fifo_tx_axis_tvalid);
-    repeat(20) @(posedge clk);
+    // @(posedge fifo_tx_axis_tvalid);
+    repeat(200) @(posedge clk);
 
 //    // 2) modify QP to RTS
 //    frame = assemble_frame(build_cm_payload(3'd3, REMOTE_QP, 1'b0, 1'b0, 32'd0, 32'd0));

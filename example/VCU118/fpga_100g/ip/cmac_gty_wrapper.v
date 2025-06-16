@@ -907,6 +907,9 @@ module cmac_gty_wrapper #(
   wire [3:0] gt_rxusrclk;
   wire [3:0] gt_rxusrclk2;
 
+  wire [3:0] gt_tx_reset_done;
+  wire [3:0] gt_rx_reset_done;
+  
   assign gt_tx_reset[0] = gt_tx_reset_drp_reg;
   assign gt_tx_reset[1] = gt_tx_reset_drp_reg || gt_tx_reset_out[0];
   assign gt_tx_reset[2] = gt_tx_reset_drp_reg || gt_tx_reset_out[0];
@@ -1002,9 +1005,6 @@ module cmac_gty_wrapper #(
   wire [511:0] gt_rxdata;
   wire [63:0] gt_rxctrl0;
   wire [63:0] gt_rxctrl1;
-
-  wire [3:0] gt_tx_reset_done;
-  wire [3:0] gt_rx_reset_done;
 
   wire xcvr_qpll0lock;
   wire xcvr_qpll0clk;

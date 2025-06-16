@@ -36,7 +36,7 @@ begin
     process(clk) is
     begin
         if rising_edge(clk) then
-            if rst then
+            if rst = '1' then
                 clk_ctr   <= (others => '0');
                 valid_ctr <= (others => '0');
                 ready_ctr <= (others => '0');
@@ -48,13 +48,13 @@ begin
                     ready_ctr <= (others => '0');
                     both_ctr  <= (others => '0');
                 else
-                    if s_axis_tvalid then
+                    if s_axis_tvalid = '1' then
                         valid_ctr <= valid_ctr + 1;
                     end if;
-                    if m_axis_tready then
+                    if m_axis_tready = '1' then
                         ready_ctr <= ready_ctr + 1;
                     end if;
-                    if s_axis_tvalid and m_axis_tready then
+                    if s_axis_tvalid = '1' and m_axis_tready = '1' then
                         both_ctr <= both_ctr + 1;
                     end if;
                 end if;

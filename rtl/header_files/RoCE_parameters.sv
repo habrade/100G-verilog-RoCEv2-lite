@@ -182,4 +182,4 @@ package RoCE_params;
         logic [7 :0] syndrome;
     } roce_aeth_hdr_t;
 
-endpackage
+endpackage  : RoCE_params

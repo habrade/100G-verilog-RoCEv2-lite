@@ -255,8 +255,8 @@ wire [31:0] subnet_mask = {8'd255, 8'd255, 8'd255, 8'd0  };
 
 wire clear_arp_cache;
 
-wire [12:0] pmtu;
-wire [15:0] RoCE_udp_port;
+wire [12:0] pmtu = 13'd4;
+wire [15:0] RoCE_udp_port = 16'h12B7;
   
   vio_roce_ip_cfg vio_roce_ip_cfg_inst (
     .clk(clk),
@@ -730,7 +730,7 @@ assign rx_fifo_udp_payload_axis_tuser = rx_udp_payload_axis_tuser;
       .m_udp_payload_axis_tuser(tx_udp_payload_axis_tuser),
       .busy(),
       .error_payload_early_termination(),
-      .pmtu(pmtu),
+      .pmtu(3'd4),
       .RoCE_udp_port(RoCE_udp_port),
       .loc_ip_addr(local_ip),
       .timeout_period(64'd20000), //3.1 ns * 20000 = 62 ns

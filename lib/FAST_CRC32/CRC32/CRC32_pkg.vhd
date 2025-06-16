@@ -56,6 +56,15 @@ end package CRC32_pkg;
 
 package body CRC32_pkg is
 
+    function xor_reduce(vec : std_logic_vector) return std_logic is
+        variable result : std_logic := '0';
+    begin
+        for i in vec'range loop
+            result := result xor vec(i);
+        end loop;
+        return result;
+    end function xor_reduce;
+
     function matrix_transpose(matrix : in matrix_32x32_t)
     return matrix_32x32_t is
         variable matrix_transp : matrix_32x32_t;
@@ -73,7 +82,7 @@ package body CRC32_pkg is
         variable prod : std_logic_vector(vector'high downto 0);
     begin
         gen_prod_l : for i in 0 to matrix'high loop
-            prod(i) := xor (matrix(i) and vector);
+            prod(i) := xor_reduce(matrix(i) and vector);
         end loop;
         return prod;
     end function matrix_vector_mul;
@@ -86,7 +95,7 @@ package body CRC32_pkg is
         matrix_transposed := matrix_transpose(matrix_2);
         outer_loop : for i in 0 to matrix_1'high loop
             inner_loop : for j in 0 to matrix_transposed'high loop
-                matrix_prod(i)(j) := xor (matrix_1(i) and matrix_transposed(j));
+                matrix_prod(i)(j) := xor_reduce(matrix_1(i) and matrix_transposed(j));
             end loop;
         end loop;
         return matrix_prod;
@@ -114,7 +123,7 @@ package body CRC32_pkg is
         poly_matrix_shift(0)(30 downto 0)  := (others => '0');
 
         gen_loop : for i in 1 to 31 loop
-            poly_matrix_shift(i) := poly_matrix_shift(i - 1) srl 1;
+            poly_matrix_shift(i) := std_logic_vector(shift_right(unsigned(poly_matrix_shift(i - 1)), 1));
         end loop;
 
         return poly_matrix_shift;
@@ -131,7 +140,7 @@ package body CRC32_pkg is
         xor_loop_row : for j in 0 to 31 loop
             xor_loop_column : for k in 0 to 31 loop
                 if j < k then
-                    if generator_matrix_res(j)(63 - k) then
+                    if generator_matrix_res(j)(63 - k) = '1' then
                         generator_matrix_res(j) := generator_matrix_res(j) xor poly_matrix_shift(k);
                     end if;
                 end if;

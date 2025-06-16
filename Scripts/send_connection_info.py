@@ -82,6 +82,10 @@ def request_qp_info(rem_ip_addr="22.1.212.10", loc_ip_addr="22.1.212.11",loc_qpn
 
     REM_IP_ADDRESS = rem_ip_addr
     REM_IP_ADDRESS_INT = int(ip_address(rem_ip_addr))
+
+
+    print(f"{REM_IP_ADDRESS_INT}")
+
     REM_R_KEY = 0x0
     REM_QPN = 0x0
     REM_PSN = 0x0

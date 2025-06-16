@@ -1,18 +1,15 @@
-# Makefile for simulating fpga_core with QuestaSim
+# Makefile for simulating fpga_core with VCS
+# Paths
+VCS_BIN ?= /opt/synopsys/vcs/W-2024.09-SP1/bin
+VCS      := $(VCS_BIN)/vcs
+VLOGAN   := $(VCS_BIN)/vlogan
+VHDLAN   := $(VCS_BIN)/vhdlan
 
-# Tool paths
-QUESTA_BIN ?= /opt/questa_sim/questasim/bin
-VLOG := $(QUESTA_BIN)/vlog
-VCOM := $(QUESTA_BIN)/vcom
-VSIM := $(QUESTA_BIN)/vsim
-VLIB := $(QUESTA_BIN)/vlib
-
-# Xilinx simulation libraries (precompiled for Questa)
-XILINX_LIB ?= /opt/questa_sim/compiled_lib
+XILINX_LIB ?= /opt/synopsys/vcs/vivado_vcs_lib
 
 TOP_DIR  := ../..
 ROOT_DIR := ../../../../..
-TB       := $(TOP_DIR)/tb/fpga_core/top_tb.sv
+TB      := $(TOP_DIR)/tb/fpga_core/top_tb.sv
 
 SRCS := \
     $(TOP_DIR)/rtl/fpga.v \
@@ -100,21 +97,26 @@ VHDL_SRCS := \
     $(ROOT_DIR)/lib/FAST_CRC32/CRC32/CRC32_D512_matrix.vhd \
     $(ROOT_DIR)/lib/FAST_CRC32/Experimental/CRC32_matrix_pipeline.vhd
 
-INC_DIRS := +incdir+$(ROOT_DIR)/rtl/header_files +incdir+$(ROOT_DIR)/lib/Tbps_CRC/core_src
+INC_DIRS := \
+    +incdir+$(ROOT_DIR)/rtl/header_files \
+    +incdir+$(ROOT_DIR)/lib/Tbps_CRC/core_src
 
-all: work compile
+SIMV := simv
 
-work:
-	$(VLIB) work
+all: $(SIMV)
 
-compile: $(SRCS) $(VHDL_SRCS) $(TB)
-	$(VLOG) -sv -timescale=1ns/1ps $(INC_DIRS) $(SRCS) $(TB)
-	$(VCOM) $(VHDL_SRCS)
+$(SIMV): $(SRCS) $(VHDL_SRCS) $(TB)
+	$(VLOGAN) -full64 $(INC_DIRS) -sverilog -timescale=1ns/1ps $(SRCS) $(TB)
+	$(VHDLAN) -full64 $(VHDL_SRCS)
+	$(VCS) -full64 -debug_access+all -kdb -sverilog -timescale=1ns/1ps -l vcs.log -top top_tb \
+	-L $(XILINX_LIB)/unisims_ver \
+	-L $(XILINX_LIB)/unimacro_ver \
+	-L $(XILINX_LIB)/unisim \
+	-L $(XILINX_LIB)/unimacro \
+	-o $(SIMV)
 
-run: compile
-	$(VSIM) -L $(XILINX_LIB)/unisims_ver -L $(XILINX_LIB)/unimacro_ver \
--L $(XILINX_LIB)/unisim -L $(XILINX_LIB)/unimacro \
--gui -do add_wave.do top_tb
+run: $(SIMV)
+	./$(SIMV) +vcs+vcdpluson -l sim.log 
 
 clean:
-	rm -rf work transcript vsim.wlf
+	rm -rf csrc simv simv.daidir vcs.log sim.log work *.key

@@ -7,4 +7,4 @@ package Board_params;
 
     parameter NET_DATA_WIDTH = 512;
   
-endpackage
+endpackage : Board_params

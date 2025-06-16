@@ -64,7 +64,7 @@ begin
         end if;
     end process;
 
-    keep_shreg(0) <= keep when valid_in else X"0000000000000000";
+    keep_shreg(0) <= keep when valid_in = '1' else X"0000000000000000";
     process(clk)
     begin
         if rising_edge(clk) then
@@ -185,118 +185,118 @@ begin
     out_total_p : process(clk) is
     begin
         if rising_edge(clk) then
-            if rst then
+            if rst = '1' then
                 out_crc <= CRC_INIT;
             else
                 case keep_shreg(2) is
                     when X"0000000000000000" => --Should not happen
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= CRC_INIT;
                         else
                             out_crc <= out_crc;
                         end if;
                     when X"000000000000000F" => --Should not happen
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(0), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(0), out_crc);
                         end if;
                     when X"00000000000000FF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(1), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(1), out_crc);
                         end if;
                     when X"0000000000000FFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(2), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(2), out_crc);
                         end if;
                     when X"000000000000FFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(3), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(3), out_crc);
                         end if;
                     when X"00000000000FFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(4), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(4), out_crc);
                         end if;
                     when X"0000000000FFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(5), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(5), out_crc);
                         end if;
                     when X"000000000FFFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(6), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(6), out_crc);
                         end if;
                     when X"00000000FFFFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(7), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(7), out_crc);
                         end if;
                     when X"0000000FFFFFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(8), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(8), out_crc);
                         end if;
                     when X"000000FFFFFFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(9), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(9), out_crc);
                         end if;
                     when X"00000FFFFFFFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(10), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(10), out_crc);
                         end if;
                     when X"0000FFFFFFFFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(11), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(11), out_crc);
                         end if;
                     when X"000FFFFFFFFFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(12), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(12), out_crc);
                         end if;
                     when X"00FFFFFFFFFFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(13), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(13), out_crc);
                         end if;
                     when X"0FFFFFFFFFFFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(14), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(14), out_crc);
                         end if;
                     when X"FFFFFFFFFFFFFFFF" =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             crc_seed_test <=  matrix_vector_mul(MATRIX_ARRAY(15), CRC_INIT);
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(15), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             crc_seed_test <=  matrix_vector_mul(MATRIX_ARRAY(15), out_crc);
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(15), out_crc);
                         end if;
                     when others =>
-                        if rst_crc then
+                        if rst_crc = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(15), CRC_INIT);
-                        elsif valid_shreg(2) then
+                        elsif valid_shreg(2) = '1' then
                             out_crc <= out_partial_crc xor matrix_vector_mul(MATRIX_ARRAY(15), out_crc);
                         end if;
                 end case;
@@ -308,7 +308,9 @@ begin
         reverse_g : for i in 0 to 31 generate
             crcOut(i) <= out_crc(31 - i) xor FINXOR(31 - i);
         end generate;
-    else generate
+    end generate;
+
+    no_reverse_out_g : if not REVERSE_RESULT generate
         crcOut <= out_crc xor FINXOR;
     end generate;
 

@@ -29,8 +29,8 @@ module crc_gen_byteEn #
     input logic [DWIDTH/8-1:0] byteEn,
     input logic dlast,
     input logic flitEn,
-    (* keep = "true" *) output logic [CRC_WIDTH-1:0] crc_out = {CRC_WIDTH{1'b0}},
-    (* keep = "true" *) output logic crc_out_vld = 1'b0
+    (* keep = "true" *) output logic [CRC_WIDTH-1:0] crc_out,
+    (* keep = "true" *) output logic crc_out_vld
 );
     generate
         if (DWIDTH % 8 != 0) $fatal(0,"DWIDTH has to be a multiple of 8");
@@ -42,15 +42,54 @@ module crc_gen_byteEn #
     localparam bit [CRC_WIDTH-1:0][DWIDTH-1:0] DATA_TABLE = gen_data_table(UNI_TABLE);
     localparam int DIV_PER_LVL = get_div_per_lvl();
     localparam bit [PIPE_LVL:0][31:0] N_TERMS = get_n_terms(DIV_PER_LVL);
-    localparam bit [PIPE_LVL:0][CRC_WIDTH-1:0][(DWIDTH-1)/DIV_PER_LVL:0] BRANCH_ENABLE_TABLE = get_branch_enable_table(DATA_TABLE,DIV_PER_LVL,N_TERMS);
+
+    function automatic bit [PIPE_LVL:0][CRC_WIDTH-1:0][(DWIDTH-1)/DIV_PER_LVL:0] get_branch_enable_table(
+        input [CRC_WIDTH-1:0][DWIDTH-1:0] data_table,
+        input int divider_per_lvl,
+        input bit [PIPE_LVL:0][31:0] n_terms
+    );
+        bit [PIPE_LVL:0][CRC_WIDTH-1:0][(DWIDTH-1)/DIV_PER_LVL:0] branch_enable_table =
+            {(PIPE_LVL+1){{CRC_WIDTH{{((DWIDTH-1)/DIV_PER_LVL+1){1'b0}}}}}};
+        int n_terms_int;
+        if (PIPE_LVL != 0) begin
+            n_terms_int = int'(n_terms[0]);
+            for (int i = 0; i < CRC_WIDTH; i++) begin
+                for (int j = 0; j <= (n_terms_int-1)/divider_per_lvl; j++) begin
+                    for (int k = j*divider_per_lvl; k < (j+1)*divider_per_lvl && k < n_terms_int; k++) begin
+                        if (data_table[i][k]) begin
+                            branch_enable_table[0][i][j] = 1'b1;
+                            break;
+                        end
+                    end
+                end
+            end
+            for (int i = 1; i < PIPE_LVL; i++) begin
+                n_terms_int = int'(n_terms[i]);
+                for (int j = 0; j < CRC_WIDTH; j++) begin
+                    for (int k = 0; k <= (n_terms_int-1)/divider_per_lvl; k++) begin
+                        for (int m = k*divider_per_lvl; m < (k+1)*divider_per_lvl && m < n_terms_int; m++) begin
+                            if (branch_enable_table[i-1][j][m]) begin
+                                branch_enable_table[i][j][k] = 1'b1;
+                                break;
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        return branch_enable_table;
+    endfunction
+
+    localparam bit [PIPE_LVL:0][CRC_WIDTH-1:0][(DWIDTH-1)/DIV_PER_LVL:0] BRANCH_ENABLE_TABLE =
+        get_branch_enable_table(DATA_TABLE,DIV_PER_LVL,N_TERMS);
     localparam bit [$clog2(DWIDTH/8)-1:0][CRC_WIDTH-1:0][CRC_WIDTH-1:0] REVERT_TABLE = get_revert_table();
 
     //input registers
     logic [$clog2(DWIDTH/8)-1:0] crc_rev_en_pipe_wire;
-    logic [PIPE_LVL:0][$clog2(DWIDTH/8)-1:0] crc_rev_en_pipe_reg = {(PIPE_LVL+1){{$clog2(DWIDTH/8){1'b0}}}};
-    logic [PIPE_LVL:0] dlast_reg = {(PIPE_LVL+1){1'b0}};
-    logic [PIPE_LVL:0] flitEn_reg = {(PIPE_LVL+1){1'b0}};
-    logic [DWIDTH-1:0] din_reg = {DWIDTH{1'b0}};
+    logic [PIPE_LVL:0][$clog2(DWIDTH/8)-1:0] crc_rev_en_pipe_reg;
+    logic [PIPE_LVL:0] dlast_reg;
+    logic [PIPE_LVL:0] flitEn_reg;
+    logic [DWIDTH-1:0] din_reg;
 
     //input mask
     logic [DWIDTH-1:0] mask_in_byte;
@@ -64,17 +103,16 @@ module crc_gen_byteEn #
 
     //pipeline logic
     logic [PIPE_LVL:0][CRC_WIDTH-1:0][(DWIDTH-1)/DIV_PER_LVL:0] data_pipe;
-    logic [PIPE_LVL:0][CRC_WIDTH-1:0][(DWIDTH-1)/DIV_PER_LVL:0] data_pipe_reg = {(PIPE_LVL+1){{CRC_WIDTH{{((DWIDTH-1)/DIV_PER_LVL+1){1'b0}}}}}};
+    logic [PIPE_LVL:0][CRC_WIDTH-1:0][(DWIDTH-1)/DIV_PER_LVL:0] data_pipe_reg;
 
     //crc feedback
-    (* keep = "true" *) logic [CRC_WIDTH-1:0] crc_previous = INIT;
+    (* keep = "true" *) logic [CRC_WIDTH-1:0] crc_previous;
 
     //crc revert
-    logic [$clog2(DWIDTH/8)-1:0][CRC_WIDTH-1:0] crc_rev_wire = {$clog2(DWIDTH/8){{CRC_WIDTH{1'b0}}}};
-    logic [$clog2(DWIDTH/8)-1:0][CRC_WIDTH-1:0] crc_rev_reg = {$clog2(DWIDTH/8){{CRC_WIDTH{1'b0}}}};
-    logic [$clog2(DWIDTH/8)-1:0][$clog2(DWIDTH/8)-1:0] crc_rev_en_reg = {$clog2(DWIDTH/8){{$clog2(DWIDTH/8){1'b0}}}};
-    logic [$clog2(DWIDTH/8)-1:0] crc_vld_rev_reg = {$clog2(DWIDTH/8){1'b0}};
-
+    logic [$clog2(DWIDTH/8)-1:0][CRC_WIDTH-1:0] crc_rev_wire;
+    logic [$clog2(DWIDTH/8)-1:0][CRC_WIDTH-1:0] crc_rev_reg;
+    logic [$clog2(DWIDTH/8)-1:0][$clog2(DWIDTH/8)-1:0] crc_rev_en_reg;
+    logic [$clog2(DWIDTH/8)-1:0] crc_vld_rev_reg;
 //input regs
     always_comb begin
         for (int i = 0; i < DWIDTH/8; i++)
@@ -131,11 +169,15 @@ module crc_gen_byteEn #
     end
 
     always_ff @(posedge clk) begin
-        for (int i = 0; i < PIPE_LVL; i++) begin
-            for (int j = 0; j < CRC_WIDTH; j++) begin
-                for (int k = 0; k < N_TERMS[i+1]; k++) begin
-                    if (BRANCH_ENABLE_TABLE[i][j][k])
-                        data_pipe_reg[i][j][k] <= data_pipe[i][j][k];
+        if (rst) begin
+            data_pipe_reg <= {(PIPE_LVL+1){{CRC_WIDTH{{((DWIDTH-1)/DIV_PER_LVL+1){1'b0}}}}}};
+        end else begin
+            for (int i = 0; i < PIPE_LVL; i++) begin
+                for (int j = 0; j < CRC_WIDTH; j++) begin
+                    for (int k = 0; k < N_TERMS[i+1]; k++) begin
+                        if (BRANCH_ENABLE_TABLE[i][j][k])
+                            data_pipe_reg[i][j][k] <= data_pipe[i][j][k];
+                    end
                 end
             end
         end
@@ -149,13 +191,19 @@ module crc_gen_byteEn #
         end
     end
     always_ff @(posedge clk) begin
-        crc_rev_en_pipe_reg[0] <= {<<{crc_rev_en_pipe_wire}};
-        dlast_reg[0] <= dlast;
-        flitEn_reg[0] <= flitEn;
-        for (int i = 1; i <= PIPE_LVL; i++) begin
-            crc_rev_en_pipe_reg[i] <= crc_rev_en_pipe_reg[i-1];
-            dlast_reg[i] <= dlast_reg[i-1];
-            flitEn_reg[i] <= flitEn_reg[i-1];
+        if (rst) begin
+            crc_rev_en_pipe_reg <= {(PIPE_LVL+1){{$clog2(DWIDTH/8){1'b0}}}};
+            dlast_reg <= {(PIPE_LVL+1){1'b0}};
+            flitEn_reg <= {(PIPE_LVL+1){1'b0}};
+        end else begin
+            crc_rev_en_pipe_reg[0] <= {<<{crc_rev_en_pipe_wire}};
+            dlast_reg[0] <= dlast;
+            flitEn_reg[0] <= flitEn;
+            for (int i = 1; i <= PIPE_LVL; i++) begin
+                crc_rev_en_pipe_reg[i] <= crc_rev_en_pipe_reg[i-1];
+                dlast_reg[i] <= dlast_reg[i-1];
+                flitEn_reg[i] <= flitEn_reg[i-1];
+            end
         end
     end
 
@@ -182,18 +230,24 @@ module crc_gen_byteEn #
         end
     end
     always_ff @(posedge clk) begin
-        crc_rev_reg[0] <= crc_int;
-        crc_vld_rev_reg[0] <= flitEn_reg[PIPE_LVL] & dlast_reg[PIPE_LVL];
-        crc_rev_en_reg[0] <= crc_rev_en_pipe_reg[PIPE_LVL];
-        for (int i = 1; i < $clog2(DWIDTH/8); i++) begin
-            crc_rev_en_reg[i] <= crc_rev_en_reg[i-1];
-            if (crc_rev_en_reg[i-1][i-1])
-                crc_rev_reg[i] <= crc_rev_wire[i-1];
-            else
-                crc_rev_reg[i] <= crc_rev_reg[i-1];
-        end
-        for (int i = 1; i < $clog2(DWIDTH/8); i++) begin
-            crc_vld_rev_reg[i] <= crc_vld_rev_reg[i-1];
+        if (rst) begin
+            crc_rev_reg <= {$clog2(DWIDTH/8){{CRC_WIDTH{1'b0}}}};
+            crc_rev_en_reg <= {$clog2(DWIDTH/8){{$clog2(DWIDTH/8){1'b0}}}};
+            crc_vld_rev_reg <= {$clog2(DWIDTH/8){1'b0}};
+        end else begin
+            crc_rev_reg[0] <= crc_int;
+            crc_vld_rev_reg[0] <= flitEn_reg[PIPE_LVL] & dlast_reg[PIPE_LVL];
+            crc_rev_en_reg[0] <= crc_rev_en_pipe_reg[PIPE_LVL];
+            for (int i = 1; i < $clog2(DWIDTH/8); i++) begin
+                crc_rev_en_reg[i] <= crc_rev_en_reg[i-1];
+                if (crc_rev_en_reg[i-1][i-1])
+                    crc_rev_reg[i] <= crc_rev_wire[i-1];
+                else
+                    crc_rev_reg[i] <= crc_rev_reg[i-1];
+            end
+            for (int i = 1; i < $clog2(DWIDTH/8); i++) begin
+                crc_vld_rev_reg[i] <= crc_vld_rev_reg[i-1];
+            end
         end
     end
 

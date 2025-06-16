@@ -7,7 +7,7 @@ use work.CRC32_pkg.all;
 entity CRC32_matrix_pipeline is
     generic(
         DATA_WIDTH     : integer                       := 512;
-        KEEP_WIDTH     : integer                       := DATA_WIDTH/8;
+        KEEP_WIDTH     : integer                       := 64; -- defaults to DATA_WIDTH/8
         CRC_POLY       : std_logic_vector(31 downto 0) := CRC32_POLY;
         CRC_INIT       : std_logic_vector(31 downto 0) := X"FFFFFFFF";
         REVERSE_INPUT  : boolean                       := FALSE;
@@ -72,17 +72,19 @@ begin
         process(clk) is
         begin
             if rising_edge(clk) then
-                if valid_shreg(STEPS - 2) then
+                if valid_shreg(STEPS - 2) = '1' then
                     keep_block_number <= keep2blocknumber_8(keep_shreg(STEPS - 2));
                 end if;
             end if;
         end process;
-    else  generate
+    end generate;
+
+    gen_keep_to_block_w : if DATA_WIDTH /= 64 generate
         process(clk) is
         begin
             if rising_edge(clk) then
-                if valid_shreg(STEPS - 2) then
-                    keep_block_number <= keep2blocknumber((KEEP_WIDTH-1 downto 0 => keep_shreg(STEPS - 2), others => '0'));
+                if valid_shreg(STEPS - 2) = '1' then
+                    keep_block_number <= keep2blocknumber(std_logic_vector(resize(unsigned(keep_shreg(STEPS - 2)), 128)));
                 end if;
             end if;
         end process;
@@ -93,7 +95,9 @@ begin
         reverse_g : for i in 0 to DATA_WIDTH - 1 generate
             data(i) <= data_in(DATA_WIDTH - 1 - i);
         end generate;
-    else generate
+    end generate;
+
+    no_reverse_in_g : if not REVERSE_INPUT generate
         data <= data_in;
     end generate;
 
@@ -128,11 +132,11 @@ begin
     process(clk)
     begin
         if rising_edge(clk) then
-            if (valid_shreg(valid_shreg'high - 1) and rst_crc) then
+            if (valid_shreg(valid_shreg'high - 1) = '1' and rst_crc = '1') then
                 computation_ongoing <= '1';
-            elsif (valid_shreg(valid_shreg'high - 1) and not computation_ongoing) then
+            elsif (valid_shreg(valid_shreg'high - 1) = '1' and computation_ongoing = '0') then
                 computation_ongoing <= '1';
-            elsif computation_ongoing and rst_crc then
+            elsif computation_ongoing = '1' and rst_crc = '1' then
                 computation_ongoing <= '0';
             end if;
         end if;
@@ -149,15 +153,15 @@ begin
     -- partial_crc_init_seed when first frame in packet
     -- partial_crc_last_seed otherwise
     --crc_seed <= partial_crc_init_seed(keep_block_number - 1) when (rst_crc or not valid_crc_out) else partial_crc_last_seed(keep_block_number - 1);
-    crc_seed <= partial_crc_init_seed(keep_block_number - 1) when (not computation_ongoing or rst_crc) else partial_crc_last_seed(keep_block_number - 1);
+    crc_seed <= partial_crc_init_seed(keep_block_number - 1) when (computation_ongoing = '0' or rst_crc = '1') else partial_crc_last_seed(keep_block_number - 1);
 
     crc_stage_0 : process(clk)
     begin
         if rising_edge(clk) then
-            if rst then
+            if rst = '1' then
                 crc_stage(0) <= CRC_INIT;
             else
-                if valid_shreg(0) then
+                if valid_shreg(0) = '1' then
                     --if keep_shreg(0)(3 downto 0) = X"F" and keep_shreg(0)(7 downto 4) = X"F" then
                     if keep_shreg(0)(3 downto 0) = X"F" then
                         crc_stage(0) <= matrix_vector_mul(MATRIX_ARRAY(0), data_stage(0)(31 downto 0));
@@ -177,10 +181,10 @@ begin
                 variable data_xor_crc : crc32_word_t;
             begin
                 if rising_edge(clk) then
-                    if rst then
+                    if rst = '1' then
                         crc_stage(i) <= CRC_INIT;
                     else
-                        if valid_shreg(i) then
+                        if valid_shreg(i) = '1' then
                             if keep_shreg(i)((i + 1) * 4 - 1 downto (i) * 4) = X"F" then
                                 data_xor_crc := data_stage(i)((i + 1) * 32 - 1 downto i * 32) xor crc_stage(i - 1);
                                 crc_stage(i) <= matrix_vector_mul(MATRIX_ARRAY(0), data_xor_crc);
@@ -201,10 +205,10 @@ begin
             variable data_xor_crc : crc32_word_t;
         begin
             if rising_edge(clk) then
-                if rst then
+                if rst = '1' then
                     crc_stage(STEPS - 1) <= CRC_INIT;
                 else
-                    if valid_shreg(STEPS - 1) then
+                    if valid_shreg(STEPS - 1) = '1' then
                         if keep_shreg(STEPS - 1)(STEPS * 4 - 1 downto (STEPS - 1) * 4) = X"F" then
                             data_xor_crc           := data_stage(STEPS - 1)((STEPS) * 32 - 1 downto (STEPS - 1) * 32) xor crc_stage(STEPS - 2);
                             crc_stage(STEPS - 1) <= matrix_vector_mul(MATRIX_ARRAY(0), data_xor_crc) xor crc_seed;
@@ -236,7 +240,9 @@ begin
         reverse_g : for i in 0 to 31 generate
             crcOut(i) <= out_crc(31 - i) xor FINXOR(31 - i);
         end generate;
-    else generate
+    end generate;
+
+    no_reverse_out_g : if not REVERSE_RESULT generate
         crcOut <= out_crc xor FINXOR;
     end generate;
 
