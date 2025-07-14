@@ -533,7 +533,7 @@ module fpga (
       .rx_pfc_ack(qsfp2_rx_pfc_ack)
   );
  
- 
+/* 
  ila_axis ila_eth_rx(
     .clk(qsfp1_rx_clk_int),
     .probe0(qsfp1_rx_axis_tdata_int),
@@ -553,6 +553,7 @@ ila_axis ila_eth_tx(
     .probe4(qsfp1_tx_axis_tlast_int),
     .probe5(qsfp1_tx_axis_tuser_int)
 );
+*/
 
 
   wire [7:0] led_int;

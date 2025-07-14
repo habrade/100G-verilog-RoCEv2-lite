@@ -738,7 +738,7 @@ assign rx_fifo_udp_payload_axis_tuser = rx_udp_payload_axis_tuser;
       .rnr_retry_count(3'd7)
   );
   
-  
+  /*
   ila_axis ila_eth_payload_tx(
     .clk(clk),
     .probe0(tx_eth_payload_axis_tdata),
@@ -758,6 +758,7 @@ assign rx_fifo_udp_payload_axis_tuser = rx_udp_payload_axis_tuser;
     .probe4(rx_eth_payload_axis_tlast),
     .probe5(rx_eth_payload_axis_tuser)
   );
+  */
   
 endmodule
 
