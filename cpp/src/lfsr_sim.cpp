@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <cctype>
 #include <algorithm>
+#include <unistd.h>
+
 
 using namespace std;
 
@@ -180,43 +182,72 @@ static vector<uint8_t> bits_to_bytes_be(const Bits& bits)
 
 int main(int argc, char* argv[])
 {
-    if (argc < 10) {
-        cerr << "Usage: " << argv[0] << " <LFSR_WIDTH> <LFSR_POLY> <LFSR_CONFIG> <LFSR_FEED_FORWARD> <REVERSE> <DATA_WIDTH> <data_in> <state_in> <output.bin>\n";
+    int LFSR_WIDTH = 31;
+    unsigned long long LFSR_POLY = 0x10000001ull;
+    string LFSR_CONFIG = "FIBONACCI";
+    bool LFSR_FEED_FORWARD = false;
+    bool REVERSE = false;
+    int DATA_WIDTH = 64;
+    string data_in_hex = "0";
+    string state_in_hex = "0x7fffffff";
+    string outfile = "out.bin";
+    int num_words = 100;
+
+    int opt;
+    while ((opt = getopt(argc, argv, "w:p:c:f:r:d:i:s:o:n:")) != -1) {
+        switch (opt) {
+            case 'w': LFSR_WIDTH = stoi(optarg); break;
+            case 'p': LFSR_POLY = stoull(optarg, nullptr, 0); break;
+            case 'c': LFSR_CONFIG = optarg; break;
+            case 'f': LFSR_FEED_FORWARD = stoi(optarg) != 0; break;
+            case 'r': REVERSE = stoi(optarg) != 0; break;
+            case 'd': DATA_WIDTH = stoi(optarg); break;
+            case 'i': data_in_hex = optarg; break;
+            case 's': state_in_hex = optarg; break;
+            case 'o': outfile = optarg; break;
+            case 'n': num_words = stoi(optarg); break;
+            default:
+                cerr << "Usage: " << argv[0]
+                     << " [-w LFSR_WIDTH] [-p LFSR_POLY] [-c LFSR_CONFIG]"
+                     << " [-f FEED_FORWARD] [-r REVERSE] [-d DATA_WIDTH]"
+                     << " [-i DATA_IN] [-s STATE_IN] [-o OUTFILE] [-n NUM]" << endl;
+                return 1;
+        }
+    }
+
+    Bits state = hex_to_bits(state_in_hex, LFSR_WIDTH);
+    Bits data_in = hex_to_bits(data_in_hex, DATA_WIDTH);
+
+    ofstream f(outfile, ios::binary);
+    if (!f.is_open()) {
+        cerr << "Failed to open output file" << endl;
         return 1;
     }
 
-    int LFSR_WIDTH = stoi(argv[1]);
-    unsigned long long LFSR_POLY = stoull(argv[2], nullptr, 0);
-    string LFSR_CONFIG = argv[3];
-    bool LFSR_FEED_FORWARD = stoi(argv[4]) != 0;
-    bool REVERSE = stoi(argv[5]) != 0;
-    int DATA_WIDTH = stoi(argv[6]);
-    Bits data_in = hex_to_bits(argv[7], DATA_WIDTH);
-    Bits state_in = hex_to_bits(argv[8], LFSR_WIDTH);
-    string outfile = argv[9];
+    for (int w = 0; w < num_words; w++) {
+        Bits state_out(LFSR_WIDTH);
+        Bits data_out(DATA_WIDTH);
+        for (int n=0;n<LFSR_WIDTH;n++) {
+            Mask m = lfsr_mask(n, LFSR_WIDTH, LFSR_POLY, LFSR_CONFIG, LFSR_FEED_FORWARD, REVERSE, DATA_WIDTH);
+            state_out[n] = parity(m.state, m.data, state, data_in);
+        }
+        for (int n=0;n<DATA_WIDTH;n++) {
+            Mask m = lfsr_mask(n+LFSR_WIDTH, LFSR_WIDTH, LFSR_POLY, LFSR_CONFIG, LFSR_FEED_FORWARD, REVERSE, DATA_WIDTH);
+            data_out[n] = parity(m.state, m.data, state, data_in);
+        }
 
-    Bits state_out(LFSR_WIDTH);
-    Bits data_out(DATA_WIDTH);
+        vector<uint8_t> bytes = bits_to_bytes_be(data_out);
+        f.write((char*)bytes.data(), bytes.size());
 
-    for (int n=0;n<LFSR_WIDTH;n++) {
-        Mask m = lfsr_mask(n, LFSR_WIDTH, LFSR_POLY, LFSR_CONFIG, LFSR_FEED_FORWARD, REVERSE, DATA_WIDTH);
-        state_out[n] = parity(m.state, m.data, state_in, data_in);
-    }
-    for (int n=0;n<DATA_WIDTH;n++) {
-        Mask m = lfsr_mask(n+LFSR_WIDTH, LFSR_WIDTH, LFSR_POLY, LFSR_CONFIG, LFSR_FEED_FORWARD, REVERSE, DATA_WIDTH);
-        data_out[n] = parity(m.state, m.data, state_in, data_in);
+        state = state_out;
     }
 
-    vector<uint8_t> bytes_state = bits_to_bytes_be(state_out);
-    vector<uint8_t> bytes_data  = bits_to_bytes_be(data_out);
-
-    ofstream f(outfile, ios::binary);
-    f.write((char*)bytes_state.data(), bytes_state.size());
-    f.write((char*)bytes_data.data(), bytes_data.size());
     f.close();
 
-    cout << "state_out=0x" << bits_to_hex(state_out) << endl;
-    cout << "data_out written to " << outfile << " (" << bytes_data.size() << " bytes)" << endl;
+    cout << "final_state=0x" << bits_to_hex(state) << endl;
+    cout << "wrote " << num_words << " words to " << outfile << endl;
+
+
     return 0;
 }
 
