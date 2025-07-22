@@ -2,7 +2,11 @@
 
 
 module axis_data_generator #(
-    parameter DATA_WIDTH = 64
+    parameter DATA_WIDTH = 64,
+    // PRBS configuration
+    parameter LFSR_WIDTH = 31,
+    parameter LFSR_POLY  = 31'h10000001,
+    parameter LFSR_INIT  = {31{1'b1}}
 ) (
 
     input wire clk,
@@ -67,6 +71,27 @@ module axis_data_generator #(
     reg start_1;
     reg start_2;
 
+    // PRBS generator state
+    reg [LFSR_WIDTH-1:0] prbs_state_reg = LFSR_INIT;
+    wire [DATA_WIDTH-1:0] prbs_data;
+    wire [LFSR_WIDTH-1:0] prbs_state_next;
+
+    // Combinational PRBS generator
+    lfsr #(
+        .LFSR_WIDTH(LFSR_WIDTH),
+        .LFSR_POLY(LFSR_POLY),
+        .LFSR_CONFIG("FIBONACCI"),
+        .LFSR_FEED_FORWARD(0),
+        .REVERSE(0),
+        .DATA_WIDTH(DATA_WIDTH)
+    )
+    prbs_gen_inst (
+        .data_in({DATA_WIDTH{1'b0}}),
+        .state_in(prbs_state_reg),
+        .data_out(prbs_data),
+        .state_out(prbs_state_next)
+    );
+
     reg [31:0] word_counter = {32{1'b1}} - WORD_WIDTH;
     reg [63:0] remaining_words;
 
@@ -84,13 +109,14 @@ module axis_data_generator #(
             stop_transfer_reg <= 1'b0;
             start_1 <= 1'b0;
             start_2 <= 1'b0;
+            prbs_state_reg   <= LFSR_INIT;
         end else begin
             start_1 <= start;
             start_2 <= start_1;
             if (stop) begin
                 stop_transfer_reg <= 1'b1;
                 if (length_reg == 0) begin // no transfer on going
-                    word_counter <= {32{1 'b1}} - WORD_WIDTH;
+                    word_counter <= {32{1'b1}} - WORD_WIDTH;
                     remaining_words <= 64'd0;
                 end else if (m_axis_tvalid && m_axis_tready) begin // trasnfer on going
                     word_counter <= length_reg;
@@ -110,6 +136,7 @@ module axis_data_generator #(
                     remaining_words   <= 64'd0;
                     stop_transfer_reg <= 1'b0;
                 end
+                prbs_state_reg <= prbs_state_next;
             end else if (~start_1 && start) begin
                 stop_transfer_reg <= 1'b0;
                 length_reg <= length;
@@ -126,16 +153,8 @@ module axis_data_generator #(
         end
     end
 
-    // TDATA
-    generate
-        assign m_axis_tdata[31:0] = word_counter[31:0];
-        if (SLICES_32BIT >= 2) begin
-            assign m_axis_tdata[63:32] = ~word_counter[31:0];
-        end
-        if (SLICES_32BIT > 2) begin
-            assign m_axis_tdata[DATA_WIDTH-1:64] = {(SLICES_32BIT-2){32'hDEADBEEF}};
-        end
-    endgenerate
+    // TDATA - PRBS output
+    assign m_axis_tdata = prbs_data;
 
     // TKEEP
     assign m_axis_tkeep = m_axis_tlast ? (count2keep(remaining_words)) : {(DATA_WIDTH/8){1'b1}};
