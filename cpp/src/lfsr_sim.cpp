@@ -12,6 +12,20 @@ using namespace std;
 
 using Bits = vector<uint8_t>;
 
+struct Bits64 {
+    vector<uint64_t> words;
+};
+
+static Bits64 bits_to_words(const Bits& bits)
+{
+    Bits64 bw;
+    bw.words.resize((bits.size()+63)/64, 0);
+    for (size_t i=0; i<bits.size(); i++)
+        if (bits[i])
+            bw.words[i/64] |= uint64_t(1) << (i%64);
+    return bw;
+}
+
 static Bits hex_to_bits(string hex, int width)
 {
     if (hex.compare(0, 2, "0x") == 0 || hex.compare(0,2,"0X") == 0)
@@ -61,7 +75,7 @@ static void xor_inplace(Bits& a, const Bits& b)
     for (size_t i=0;i<a.size();i++) a[i] ^= b[i];
 }
 
-struct Mask { Bits state; Bits data; };
+struct Mask { Bits state; Bits data; Bits64 state64; Bits64 data64; };
 
 static Mask lfsr_mask(int index, int LFSR_WIDTH, unsigned long long LFSR_POLY,
                       const string& LFSR_CONFIG, bool LFSR_FEED_FORWARD,
@@ -156,14 +170,21 @@ static Mask lfsr_mask(int index, int LFSR_WIDTH, unsigned long long LFSR_POLY,
         }
     }
 
-    return {state_val, data_val};
+    Mask m;
+    m.state = state_val;
+    m.data = data_val;
+    m.state64 = bits_to_words(m.state);
+    m.data64 = bits_to_words(m.data);
+    return m;
 }
 
-static uint8_t parity(const Bits& a, const Bits& b, const Bits& state_in, const Bits& data_in)
+static uint8_t parity(const Mask& m, const Bits64& state_in, const Bits64& data_in)
 {
-    int p=0;
-    for (size_t i=0;i<a.size();i++) if (a[i] && state_in[i]) p^=1;
-    for (size_t i=0;i<b.size();i++) if (b[i] && data_in[i]) p^=1;
+    int p = 0;
+    for (size_t i=0; i<m.state64.words.size(); i++)
+        p ^= __builtin_popcountll(m.state64.words[i] & state_in.words[i]) & 1;
+    for (size_t i=0; i<m.data64.words.size(); i++)
+        p ^= __builtin_popcountll(m.data64.words[i] & data_in.words[i]) & 1;
     return p;
 }
 
@@ -217,6 +238,13 @@ int main(int argc, char* argv[])
 
     Bits state = hex_to_bits(state_in_hex, LFSR_WIDTH);
     Bits data_in = hex_to_bits(data_in_hex, DATA_WIDTH);
+    Bits64 state_w = bits_to_words(state);
+    Bits64 data_in_w = bits_to_words(data_in);
+
+    vector<Mask> masks(LFSR_WIDTH + DATA_WIDTH);
+    for (int i=0; i<LFSR_WIDTH + DATA_WIDTH; i++)
+        masks[i] = lfsr_mask(i, LFSR_WIDTH, LFSR_POLY, LFSR_CONFIG,
+                             LFSR_FEED_FORWARD, REVERSE, DATA_WIDTH);
 
     ofstream f(outfile, ios::binary);
     if (!f.is_open()) {
@@ -227,19 +255,24 @@ int main(int argc, char* argv[])
     for (int w = 0; w < num_words; w++) {
         Bits state_out(LFSR_WIDTH);
         Bits data_out(DATA_WIDTH);
+        Bits64 state_out_w; state_out_w.words.resize(state_w.words.size(),0);
+        Bits64 data_out_w; data_out_w.words.resize(data_in_w.words.size(),0);
         for (int n=0;n<LFSR_WIDTH;n++) {
-            Mask m = lfsr_mask(n, LFSR_WIDTH, LFSR_POLY, LFSR_CONFIG, LFSR_FEED_FORWARD, REVERSE, DATA_WIDTH);
-            state_out[n] = parity(m.state, m.data, state, data_in);
+            uint8_t bit = parity(masks[n], state_w, data_in_w);
+            state_out[n] = bit;
+            if (bit) state_out_w.words[n/64] |= uint64_t(1) << (n%64);
         }
         for (int n=0;n<DATA_WIDTH;n++) {
-            Mask m = lfsr_mask(n+LFSR_WIDTH, LFSR_WIDTH, LFSR_POLY, LFSR_CONFIG, LFSR_FEED_FORWARD, REVERSE, DATA_WIDTH);
-            data_out[n] = parity(m.state, m.data, state, data_in);
+            uint8_t bit = parity(masks[LFSR_WIDTH+n], state_w, data_in_w);
+            data_out[n] = bit;
+            if (bit) data_out_w.words[n/64] |= uint64_t(1) << (n%64);
         }
 
         vector<uint8_t> bytes = bits_to_bytes_be(data_out);
         f.write((char*)bytes.data(), bytes.size());
 
         state = state_out;
+        state_w = state_out_w;
     }
 
     f.close();
