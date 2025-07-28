@@ -205,10 +205,10 @@ int main(int argc, char* argv[])
 {
     int LFSR_WIDTH = 31;
     unsigned long long LFSR_POLY = 0x10000001ull;
-    string LFSR_CONFIG = "FIBONACCI";
+    string LFSR_CONFIG = "GALOIS";
     bool LFSR_FEED_FORWARD = false;
     bool REVERSE = false;
-    int DATA_WIDTH = 64;
+    int DATA_WIDTH = 512;
     string data_in_hex = "0";
     string state_in_hex = "0x7fffffff";
     string outfile = "out.bin";
