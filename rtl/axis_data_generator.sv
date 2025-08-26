@@ -80,10 +80,11 @@ module axis_data_generator #(
     lfsr #(
         .LFSR_WIDTH(LFSR_WIDTH),
         .LFSR_POLY(LFSR_POLY),
-        .LFSR_CONFIG("FIBONACCI"),
+        .LFSR_CONFIG("GALOIS"),
         .LFSR_FEED_FORWARD(0),
         .REVERSE(0),
-        .DATA_WIDTH(DATA_WIDTH)
+        .DATA_WIDTH(DATA_WIDTH),
+        .STYLE("AUTO")
     )
     prbs_gen_inst (
         .data_in({DATA_WIDTH{1'b0}}),

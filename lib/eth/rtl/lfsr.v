@@ -344,7 +344,7 @@ function [LFSR_WIDTH+DATA_WIDTH-1:0] lfsr_mask(input [31:0] index);
 endfunction
 
 // synthesis translate_off
-`define SIMULATION
+//`define SIMULATION
 // synthesis translate_on
 
 `ifdef SIMULATION
